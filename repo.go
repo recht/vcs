@@ -26,7 +26,9 @@
 package vcs
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
@@ -216,7 +218,20 @@ func (b *base) setLocalPath(local string) {
 }
 
 func (b base) run(cmd string, args ...string) ([]byte, error) {
-	out, err := exec.Command(cmd, args...).CombinedOutput()
+	c := exec.Command(cmd, args...)
+	var buf bytes.Buffer
+	stderr, err := c.StderrPipe()
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := c.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	go io.Copy(&buf, stderr)
+	go io.Copy(&buf, stdout)
+	err = c.Run()
+	out := buf.Bytes()
 	b.log(out)
 	if err != nil {
 		err = fmt.Errorf("%s: %s", out, err)
@@ -232,8 +247,22 @@ func (b *base) CmdFromDir(cmd string, args ...string) *exec.Cmd {
 }
 
 func (b *base) RunFromDir(cmd string, args ...string) ([]byte, error) {
-	c := b.CmdFromDir(cmd, args...)
-	out, err := c.CombinedOutput()
+	c := exec.Command(cmd, args...)
+	c.Dir = b.local
+	c.Env = envForDir(c.Dir)
+	var buf bytes.Buffer
+	stderr, err := c.StderrPipe()
+	if err != nil {
+		return nil, err
+	}
+	stdout, err := c.StdoutPipe()
+	if err != nil {
+		return nil, err
+	}
+	go io.Copy(&buf, stderr)
+	go io.Copy(&buf, stdout)
+	err = c.Run()
+	out := buf.Bytes()
 	return out, err
 }
 
